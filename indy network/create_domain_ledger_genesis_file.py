@@ -1,10 +1,15 @@
 import argparse
 
+from ledger.genesis_txn.genesis_txn_file_util import create_genesis_txn_init_ledger
+
+
 from indy_common.config_helper import ConfigHelper
 from indy_common.config_util import getConfig
 from indy_common.txn_util import getTxnOrderedFields
 
 from plenum.common.config_helper import PConfigHelper
+
+from stp_core.common.util import adict
 
 
 class DomainLedger:
@@ -38,6 +43,30 @@ class DomainLedger:
 
         return verkeys
 
+
+    @classmethod 
+    def gen_def(cls, dids, verkeys):
+
+        defs = []
+        for i in range(1, len(dids)+1):
+            d = adict()
+            d.nym = dids[i-1]
+            d.verkey = verkeys[i-1]
+            defs.append(d)
+
+        return defs
+
+    @classmethod
+    def init_domain_ledger(cls, appendToLedgers, genesis_dir, config, domainTxnFieldOrder):
+        domain_txn_file = cls.domain_ledger_file_name(config)
+        domain_ledger = create_genesis_txn_init_ledger(genesis_dir, domain_txn_file)
+        if not appendToLedgers:
+            domain_ledger.reset()
+        return domain_ledger
+
+    @classmethod
+    def domain_ledger_file_name(cls, config):
+        return config.domainTransactionsFile
 
     @classmethod
     def bootstrap_domain_ledger(cls, config=getConfig(), config_helper_class=PConfigHelper,
