@@ -1,6 +1,6 @@
 import argparse
 import fileinput
-
+import os
 
 from ledger.genesis_txn.genesis_txn_file_util import create_genesis_txn_init_ledger
 
@@ -9,8 +9,11 @@ from indy_common.config_helper import ConfigHelper
 from indy_common.config_util import getConfig
 from indy_common.txn_util import getTxnOrderedFields
 
-from plenum.common.config_helper import PConfigHelper
+from plenum.common.member.member import Member
 
+
+from plenum.common.config_helper import PConfigHelper
+from plenum.common.constants import TRUSTEE, STEWARD
 from stp_core.common.util import adict
 
 
@@ -134,4 +137,44 @@ class DomainLedger:
             steward_defs,
             config_helper_class=PConfigHelper,
             chroot: str=None):
-            pass
+
+       
+        config.NETWORK_NAME = network
+
+        config_helper = config_helper_class(config, chroot=chroot)
+        os.makedirs(config_helper.genesis_dir, exist_ok=True)
+        genesis_dir = config_helper.genesis_dir
+
+
+        domainLedger = cls.init_domain_ledger(appendToLedgers, genesis_dir,
+                                              config, domainTxnFieldOrder)
+
+        genesis_protocol_version = None
+
+        seq_no = 1
+
+        for td in trustee_defs:
+            trustee_txn = Member.nym_txn(td.nym, verkey=td.verkey,
+                                        role=TRUSTEE, seq_no=seq_no,
+                                        protocol_version=genesis_protocol_version)
+            
+            seq_no += 1
+            domainLedger.add(trustee_txn)
+
+        for sd in steward_defs:
+            nym_txn = Member.nym_txn(sd.nym, verkey=sd.verkey, role=STEWARD, 
+                                    creator= trustee_defs[0].nym, seq_no=seq_no,
+                                    protocol_version=genesis_protocol_version)
+            seq_no += 1
+            domainLedger.add(nym_txn)
+
+
+        domainLedger.stop()
+
+        
+
+
+if __name__ == '__main__':
+
+    
+    DomainLedger.bootstrap_domain_ledger(getConfig(), ConfigHelper, getTxnOrderedFields())
