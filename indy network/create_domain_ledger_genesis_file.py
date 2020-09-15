@@ -1,4 +1,6 @@
 import argparse
+import fileinput
+
 
 from ledger.genesis_txn.genesis_txn_file_util import create_genesis_txn_init_ledger
 
@@ -95,3 +97,41 @@ class DomainLedger:
             action='store_true')  
 
         args = parser.parse_args()
+
+        if (len(args.trusteeDids) != len(args.trusteeVerkeys)):
+            raise argparse.ArgumentTypeError("Every Trustee did must need to have  it's "
+                                             "corresponding verification key and vice versa")
+
+        if (len(args.stewardDids) != len(args.stewardVerkeys)):
+            raise argparse.ArgumentTypeError("Every Steward did must need to have it's "
+                                             "corresponding verification key and vice versa")
+
+
+        for line in fileinput.input(['/etc/indy/indy_config.py'], inplace=True):
+            if 'NETWORK_NAME' not in line:
+                print(line, end="")
+        with open('/etc/indy/indy_config.py', 'a') as cfgfile:
+            cfgfile.write("NETWORK_NAME = '{}'".format(args.network))
+
+
+        trustee_defs = cls.gen_def(args.trusteeDids, args.trusteeVerkeys)
+        steward_defs = cls.gen_def(args.stewardDids, args.stewardVerkeys)
+
+
+        cls.bootstrap_domain_ledger_core(config, args.network, args.appendToLedgers, domainTxnFieldOrder,
+                             trustee_defs, steward_defs, config_helper_class)
+
+
+
+    @classmethod 
+    def bootstrap_domain_ledger_core(
+            cls,
+            config,
+            network,
+            appendToLedgers,
+            domainTxnFieldOrder,
+            trustee_defs,
+            steward_defs,
+            config_helper_class=PConfigHelper,
+            chroot: str=None):
+            pass
