@@ -1,4 +1,5 @@
 import argparse
+from collections import namedtuple
 import ipaddress
 
 from plenum.common.util import is_hostname_valid
@@ -97,3 +98,40 @@ class PoolLedger:
 
         return did
 
+
+    @classmethod 
+    def gen_node_def(cls, names, ips, node_ports, client_ports, 
+                    blskeys, bls_proofs, verkeys, steward_nyms):
+
+        node_count = len(names)
+
+        if not ips:
+            ips = ['127.0.0.1'] * node_count
+        else:
+            if len(ips) != node_count:
+                if len(ips) > node_count:
+                    ips = ips[:node_count]
+                else:
+                    ips += ['127.0.0.1'] * (node_count - len(ips))
+
+        node_defs = []
+        for i in range(1, node_count + 1):
+            node_defs.append(NodeDef(
+                name=names[i-1],
+                ip=ips[i-1],
+                node_port=node_ports[i-1],
+                client_port=client_ports[i-1],
+                idx=i,
+                verkey=verkeys[i-1],
+                blskey=blskeys[i-1],
+                bls_proof=bls_proofs[i-1],
+                steward_nym=steward_nyms[i-1]))
+
+        return node_defs
+
+
+NodeDef = namedtuple('NodeDef', ['name', 'ip', 'node_port', 'client_port', 'idx',
+                        'blskey', 'bls_proof', 'verkey', 'steward_nym'])
+
+
+nodeParamsFileName = 'indy.env'
