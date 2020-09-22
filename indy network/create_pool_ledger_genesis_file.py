@@ -1,7 +1,10 @@
 import argparse
 from collections import namedtuple
+import fileinput
 import ipaddress
 import os
+
+from common.exceptions import PlenumValueError
 
 from plenum.common.util import hexToFriendly, is_hostname_valid
 from ledger.genesis_txn.genesis_txn_file_util import create_genesis_txn_init_ledger
@@ -214,6 +217,44 @@ class PoolLedger:
             action='store_true')  
 
         args = parser.parse_args()
+
+
+        if ((len(args.nodeName) != len(args.nodeVerkeys)) or 
+        (len(args.nodeBlskeys) != len(args.nodeVerkeys)) or 
+        (len(args.nodeBlskeys) != len(args.nodeBlsProofs)) or
+        (len(args.nodePort) != len(args.nodeBlsProofs)) or
+        (len(args.nodePort) != len(args.clientPort)) or
+        (len(args.stewardDids) != len(args.clientPort))):
+            raise argparse.ArgumentTypeError("Some arguments are missing.")
+
+
+        if isinstance(args.nodeNum, int):
+            if not (1 <= args.nodeNum <= len(args.nodeName)):
+                raise PlenumValueError(
+                    'args.nodeNum', args.nodeNum,
+                    ">= 1 && <= len(args.nodeName) {}".format(len(args.nodeName))
+                )
+        elif isinstance(args.nodeNum, list):
+            if any([True for x in args.nodeNum if not ( 1 <= x <= len(args.nodeName))]):
+                raise PlenumValueError(
+                    'some items in nodeNum list', args.nodeNum,
+                    ">=1 && <= len(args.nodeName) {}".format(len(args.nodeName))  
+            ) 
+
+        node_num = [args.nodeNum, None] if args.nodeNum else [None]
+
+        node_defs = cls.gen_node_def(args.nodeName, args.ips, args.nodePort, args.clientPort,
+                                        args.nodeBlskeys, args.nodeBlsProofs,  args.nodeVerkeys,
+                                        args.stewardDids)
+
+        if args.nodeNum:
+
+            for line in fileinput.input(['/etc/indy/indy_config.py'], inplace=True):
+                if 'NETWORK_NAME' not in line:
+                    print(line, end="")
+            with open('/etc/indy/indy_config.py', 'a') as cfgfile:
+                cfgfile.write("NETWORK_NAME = '{}'".format(args.network)) 
+
 
 
 NodeDef = namedtuple('NodeDef', ['name', 'ip', 'node_port', 'client_port', 'idx',
