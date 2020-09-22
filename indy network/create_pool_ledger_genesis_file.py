@@ -6,6 +6,8 @@ import os
 from plenum.common.util import hexToFriendly, is_hostname_valid
 from ledger.genesis_txn.genesis_txn_file_util import create_genesis_txn_init_ledger
 
+from plenum.common.config_helper import PConfigHelper, PNodeConfigHelper
+
 CLIENT_CONNECTIONS_LIMIT = 500
 
 
@@ -165,6 +167,53 @@ class PoolLedger:
     @staticmethod
     def get_nym_from_verkey(verkey: bytes):
         return hexToFriendly(verkey) 
+
+    @classmethod
+    def bootstrap_pool_ledger(cls, config, nodeParamsFileName, config_helper_class=PConfigHelper,
+                              node_config_helper_class=PNodeConfigHelper,
+                             chroot: str=None):
+        parser = argparse.ArgumentParser(description="Generate pool transactions")
+        parser.add_argument('--nodeVerkeys', required=True,
+                            help='Node Verkey, provide comma separated verification keys',
+                            type=cls. _bootstrap_args_type_verkeys)
+        parser.add_argument('--nodeBlskeys', required=True,
+                            help='Node BLS keys, provide comma separated Bls keys',
+                            type=cls. _bootstrap_args_type_bls)
+        parser.add_argument('--nodeBlsProofs', required=True,
+                            help='Node Proof of possession for BLS key, provide comma separated proof',
+                            type=cls. _bootstrap_args_type_bls)
+        parser.add_argument('--nodeName', required=True,
+                            help='Node name, provide comma separated name',
+                            type=cls. _bootstrap_args_type_list)
+        parser.add_argument('--nodePort', required=True,
+                            help='Node port, provide comma separated port',
+                            type=cls._bootstrap_args_type_port)
+        parser.add_argument('--clientPort', required=True,
+                            help='Client port, provide comma separated port',
+                            type=cls._bootstrap_args_type_port)
+        parser.add_argument('--stewardDids', required=True,
+                            help='Stewards Dids, provide comma separated dids',
+                            type=cls._bootstrap_args_type_dids)
+        parser.add_argument('--nodeNum', type=int, nargs='+',
+                            help='the number of the node that will '
+                                 'run on this machine')
+        parser.add_argument('--ips',
+                            help='IPs/hostnames of the nodes, provide comma '
+                                  'separated IPs, if no of IPS provided are less than number of nodes then the remaining'
+                                  'nodes are assigned the loopback IP, '
+                                  'i.e 127.0.0.1',
+                            type=cls._bootstrap_args_type_ips_hosts)
+        parser.add_argument('--network', required=False,
+                            help='Network name (default sandbox)',
+                            type=str,               
+                            default="sandbox")
+        parser.add_argument(
+            '--appendToLedgers',
+            help="Determine if ledger files needs to be erased "
+                 "before writing new information or not",
+            action='store_true')  
+
+        args = parser.parse_args()
 
 
 NodeDef = namedtuple('NodeDef', ['name', 'ip', 'node_port', 'client_port', 'idx',
