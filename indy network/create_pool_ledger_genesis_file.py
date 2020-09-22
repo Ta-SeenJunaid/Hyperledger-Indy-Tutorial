@@ -1,8 +1,13 @@
 import argparse
 from collections import namedtuple
 import ipaddress
+import os
 
-from plenum.common.util import is_hostname_valid
+from plenum.common.util import hexToFriendly, is_hostname_valid
+from ledger.genesis_txn.genesis_txn_file_util import create_genesis_txn_init_ledger
+
+CLIENT_CONNECTIONS_LIMIT = 500
+
 
 class PoolLedger:
 
@@ -128,6 +133,38 @@ class PoolLedger:
                 steward_nym=steward_nyms[i-1]))
 
         return node_defs
+
+
+    @classmethod 
+    def init_pool_ledger(cls, appendToLedgers, genesis_dir, config):
+        pool_txn_file = cls.pool_ledger_file_name(config)
+        pool_ledger = create_genesis_txn_init_ledger(genesis_dir, pool_txn_file)
+        if not appendToLedgers:
+            pool_ledger.reset()
+        return pool_ledger
+
+
+    @classmethod
+    def pool_ledger_file_name(cls, config):
+        return config.poolTransactionsFile
+
+
+    @staticmethod
+    def write_node_params_file(filePath, name, nIp, nPort, cIp, cPort):
+        contents = [
+            'NODE_NAME={}'.format(name),
+            'NODE_IP={}'.format(nIp),
+            'NODE_PORT={}'.format(nPort),
+            'NODE_CLIENT_IP={}'.format(cIp),
+            'NODE_CLIENT_PORT={}'.format(cPort),
+            'CLIENT_CONNECTIONS_LIMIT={}'.format(CLIENT_CONNECTIONS_LIMIT)
+        ]
+        with open(filePath, 'w') as f:
+            f.writelines(os.linesep.join(contents))   
+
+    @staticmethod
+    def get_nym_from_verkey(verkey: bytes):
+        return hexToFriendly(verkey) 
 
 
 NodeDef = namedtuple('NodeDef', ['name', 'ip', 'node_port', 'client_port', 'idx',
