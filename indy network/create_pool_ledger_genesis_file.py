@@ -4,12 +4,17 @@ import fileinput
 import ipaddress
 import os
 
-from common.exceptions import PlenumValueError
 
-from plenum.common.util import hexToFriendly, is_hostname_valid
+from common.exceptions import PlenumValueError
 from ledger.genesis_txn.genesis_txn_file_util import create_genesis_txn_init_ledger
 
+
 from plenum.common.config_helper import PConfigHelper, PNodeConfigHelper
+from plenum.common.member.steward import Steward
+from plenum.common.util import hexToFriendly, is_hostname_valid
+
+from indy_common.config_util import getConfig
+from indy_common.config_helper import ConfigHelper, NodeConfigHelper
 
 CLIENT_CONNECTIONS_LIMIT = 500
 
@@ -253,12 +258,36 @@ class PoolLedger:
                 if 'NETWORK_NAME' not in line:
                     print(line, end="")
             with open('/etc/indy/indy_config.py', 'a') as cfgfile:
-                cfgfile.write("NETWORK_NAME = '{}'".format(args.network)) 
+                cfgfile.write("NETWORK_NAME = '{}'".format(args.network))
 
+        for n_num in node_num:
+            cls.bootstrap_pool_ledger_core(config, args.network, args.appendToLedgers, node_defs, 
+                                    n_num, nodeParamsFileName, config_helper_class, 
+                                    node_config_helper_class) 
+
+    @classmethod 
+    def bootstrap_pool_ledger_core(
+             cls,
+            config,
+            network,
+            appendToLedgers,
+            node_defs,
+            localNodes,
+            nodeParamsFileName,
+            config_helper_class=PConfigHelper,
+            node_config_helper_class=PNodeConfigHelper,
+            chroot: str=None):
+        pass
 
 
 NodeDef = namedtuple('NodeDef', ['name', 'ip', 'node_port', 'client_port', 'idx',
                         'blskey', 'bls_proof', 'verkey', 'steward_nym'])
 
-
 nodeParamsFileName = 'indy.env'
+
+
+if __name__ == '__main__':
+
+    
+    PoolLedger.bootstrap_pool_ledger(getConfig(), nodeParamsFileName,
+                                     ConfigHelper, NodeConfigHelper)
