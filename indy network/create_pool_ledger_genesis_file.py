@@ -277,7 +277,28 @@ class PoolLedger:
             config_helper_class=PConfigHelper,
             node_config_helper_class=PNodeConfigHelper,
             chroot: str=None):
-        pass
+
+        if not localNodes:
+            localNodes = {}
+        try:
+            if isinstance(localNodes, int):
+                _localNodes = {localNodes}
+            else:
+                _localNodes = {int(_) for _ in localNodes}
+        except BaseException as exc:
+            raise RuntimeError('nodeNum must be an int or set of ints') from exc
+
+        config.NETWORK_NAME = network
+
+        config_helper = config_helper_class(config, chroot=chroot)
+        os.makedirs(config_helper.genesis_dir, exist_ok=True)
+        genesis_dir = config_helper.genesis_dir
+        # keys_dir = config_helper.keys_dir
+
+
+        poolLedger = cls.init_pool_ledger(appendToLedgers, genesis_dir, config)
+
+        genesis_protocol_version = None
 
 
 NodeDef = namedtuple('NodeDef', ['name', 'ip', 'node_port', 'client_port', 'idx',
