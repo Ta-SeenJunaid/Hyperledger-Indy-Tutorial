@@ -267,7 +267,7 @@ class PoolLedger:
 
     @classmethod 
     def bootstrap_pool_ledger_core(
-             cls,
+            cls,
             config,
             network,
             appendToLedgers,
@@ -299,6 +299,40 @@ class PoolLedger:
         poolLedger = cls.init_pool_ledger(appendToLedgers, genesis_dir, config)
 
         genesis_protocol_version = None
+
+
+        seq_no = 1
+        for nd in node_defs:
+
+            verkey = nd.verkey.encode()
+            blskey = nd.blskey
+            key_proof = nd.bls_proof
+
+            if nd.idx in _localNodes:
+
+                if nd.ip != '127.0.0.1':
+                    paramsFilePath = os.path.join(config.GENERAL_CONFIG_DIR, nodeParamsFileName)
+                    print('Nodes will not run locally, so writing {}'.format(paramsFilePath))
+                    PoolLedger.write_node_params_file(paramsFilePath, nd.name,
+                                                    "0.0.0.0", nd.node_port,
+                                                    "0.0.0.0", nd.client_port)
+                
+                print("This node with name {} will use ports {} and {} for nodestack and clientstack respectavely"
+                      .format(nd.name, nd.node_port, nd.client_port))
+
+
+            node_nym = cls.get_nym_from_verkey(verkey)
+
+            node_txn = Steward.node_txn(nd.steward_nym, nd.name, node_nym,
+                                        nd.ip, nd.node_port, nd.client_port, blskey=blskey,
+                                        bls_key_proof=key_proof,
+                                        seq_no=seq_no,
+                                        protocol_version=genesis_protocol_version)
+            
+            seq_no +=1
+            poolLedger.add(node_txn)
+        
+        poolLedger.stop()
 
 
 NodeDef = namedtuple('NodeDef', ['name', 'ip', 'node_port', 'client_port', 'idx',
