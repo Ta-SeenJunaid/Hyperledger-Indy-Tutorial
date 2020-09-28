@@ -5,6 +5,8 @@ import logging
 import os
 
 from indy_common.config_util import getConfig
+from plenum.common.ledger import Ledger
+
 
 logging.root.handlers = []
 logger = logging.getLogger()
@@ -64,3 +66,32 @@ def get_ledger_dir(node_name, network):
         exit()
 
     return ledger_data_dir
+
+
+def get_storage(type_, ledger_data_dir):
+    config = getConfig()
+
+    storage_name = None
+    if type_ == 'pool':
+        storage_name = config.poolTransactionsFile
+    elif type_ == 'domain':
+        storage_name = config.domainTransactionsFile
+    elif type_ == 'config':
+        storage_name = config.configTransactionsFile
+    elif type_ in get_additional_storages(ledger_data_dir):
+        storage_name = type_ + postfix
+    else:
+        print("Unknown ledger type: {}".format(type_))
+        exit()
+
+    return Ledger._defaultStore(dataDir=ledger_data_dir,
+                                logName=storage_name,
+                                ensureDurability=True,
+                                open=True,
+                                config=config,
+                                read_only=True)
+
+def get_additional_storages(ledger_data_dir):
+    additional_storages = \
+        [name[:name.find(postfix)] for name in os.listdir(ledger_data_dir) if postfix in name]
+    return additional_storages
