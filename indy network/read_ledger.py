@@ -1,10 +1,20 @@
-#source https://github.com/hyperledger/indy-node/blob/master/scripts/
+#source https://github.com/hyperledger/indy-node/blob/master/scripts/read_ledger
 
 import argparse
+import logging
+import os
 
+from indy_common.config_util import getConfig
 
+logging.root.handlers = []
+logger = logging.getLogger()
+logger.propagate = False
+logger.disabled = True
+_DATA = 'data'
 
+# TODO: Replace with constant from config
 postfix = '_transactions'
+
 
 
 def read_args():
@@ -31,3 +41,26 @@ def read_args():
                         help="Network name to read ledger from")
 
     return parser.parse_args()
+
+def get_ledger_dir(node_name, network):
+    config = getConfig()
+    _network = network if network else config.NETWORK_NAME
+    ledger_base_dir = config.LEDGER_DIR
+    if node_name:
+        # Build path to data if --node_name was specified
+        ledger_data_dir = os.path.join(ledger_base_dir, _network, _DATA, node_name)
+    else:
+        ledger_data_dir = os.path.join(ledger_base_dir, _network, _DATA)
+        if os.path.exists(ledger_data_dir):
+            dirs = os.listdir(ledger_data_dir)
+            if len(dirs) == 0:
+                print("Node's 'data' folder not found: {}".format(ledger_data_dir))
+                exit()
+            # --node_name parameter was not set, therefore we can choose first Node name in data dir
+            ledger_data_dir = os.path.join(ledger_data_dir, dirs[0])
+    if not os.path.exists(ledger_data_dir):
+        print("No such file or directory: {}".format(ledger_data_dir))
+        print("Please check, that network: '{}' was used ".format(_network))
+        exit()
+
+    return ledger_data_dir
