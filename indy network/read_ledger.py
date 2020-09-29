@@ -3,10 +3,16 @@
 import argparse
 import logging
 import os
+import shutil
+
+from pathlib import Path
+
+from common.serializers.json_serializer import JsonSerializer
+from plenum.common.ledger import Ledger
+from plenum.common.constants import HS_ROCKSDB
 
 from indy_common.config_util import getConfig
-from plenum.common.ledger import Ledger
-
+from common.serializers.serialization import ledger_txn_serializer
 
 logging.root.handlers = []
 logger = logging.getLogger()
@@ -95,3 +101,23 @@ def get_additional_storages(ledger_data_dir):
     additional_storages = \
         [name[:name.find(postfix)] for name in os.listdir(ledger_data_dir) if postfix in name]
     return additional_storages
+
+
+def print_count(storage):
+    print(storage.size)
+
+
+def print_all(storage, serializer):
+    frm = int(args.frm) if args.frm else None
+    to = int(args.to) if args.to else None
+    for seqNo, txn in storage.iterator(start=frm, end=to):
+        txn = ledger_txn_serializer.deserialize(txn)
+        print(serializer.serialize(txn, toBytes=False))
+
+
+def make_copy_of_ledger(data_dir):
+    read_copy_data_dir = data_dir + '-read-copy'
+    if os.path.exists(read_copy_data_dir):
+        shutil.rmtree(read_copy_data_dir)
+    shutil.copytree(data_dir, read_copy_data_dir)
+    return read_copy_data_dir
