@@ -23,8 +23,6 @@ _DATA = 'data'
 # TODO: Replace with constant from config
 postfix = '_transactions'
 
-
-
 def read_args():
     parser = argparse.ArgumentParser(
         description="Read ledger transactions")
@@ -101,6 +99,41 @@ def get_additional_storages(ledger_data_dir):
     additional_storages = \
         [name[:name.find(postfix)] for name in os.listdir(ledger_data_dir) if postfix in name]
     return additional_storages
+
+
+def print_txns(storage, args):
+    serializer = None
+    if args.serializer == 'json':
+        serializer = JsonSerializer()
+    else:
+        print("Unknown serializer for output: {}".format(args.serializer))
+        exit()
+
+    # --count
+    count = args.count
+    if count:
+        print_count(storage)
+        return
+
+    # --seq_no
+    seq_no = args.seq_no
+    if seq_no:
+        print_by_seq_no(storage, seq_no, serializer)
+        return
+
+    # print all (--from --to)
+    print_all(storage, serializer)
+
+
+def print_by_seq_no(storage, seq_no, serializer):
+    try:
+        txn = storage.get(seq_no)
+    except KeyError:
+        print('No transactions found for seq_no={}'.format(seq_no))
+        return
+    txn = serializer.serialize(txn, toBytes=False)
+    print(txn)
+    return
 
 
 def print_count(storage):
