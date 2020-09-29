@@ -23,6 +23,7 @@ _DATA = 'data'
 # TODO: Replace with constant from config
 postfix = '_transactions'
 
+
 def read_args():
     parser = argparse.ArgumentParser(
         description="Read ledger transactions")
@@ -47,6 +48,7 @@ def read_args():
                         help="Network name to read ledger from")
 
     return parser.parse_args()
+
 
 def get_ledger_dir(node_name, network):
     config = getConfig()
@@ -94,6 +96,7 @@ def get_storage(type_, ledger_data_dir):
                                 open=True,
                                 config=config,
                                 read_only=True)
+
 
 def get_additional_storages(ledger_data_dir):
     additional_storages = \
@@ -154,3 +157,34 @@ def make_copy_of_ledger(data_dir):
         shutil.rmtree(read_copy_data_dir)
     shutil.copytree(data_dir, read_copy_data_dir)
     return read_copy_data_dir
+
+
+if __name__ == '__main__':
+    args = read_args()
+    config = getConfig()
+
+    ledger_data_dir = get_ledger_dir(args.node_name, args.network)
+    read_copy_ledger_data_dir = None
+    try:
+        # RocksDB supports real read-only mode and does not need to have a ledger copy.
+        if config.hashStore['type'].lower() != HS_ROCKSDB:
+            config.db_transactions_config = None
+            # NOTE: such approach works well only for small ledgers.
+            tmp = make_copy_of_ledger(ledger_data_dir)
+
+            # Let's be paranoid to avoid removing of ledger instead of its copy.
+            ledger_path = Path(ledger_data_dir)
+            ledger_copy_path = Path(tmp)
+            assert ledger_path != ledger_copy_path
+            assert ledger_copy_path not in ledger_path.parents
+
+            read_copy_ledger_data_dir = tmp
+            ledger_data_dir = read_copy_ledger_data_dir
+        elif config.db_transactions_config is not None:
+            # This allows to avoid debug logs creation on each read_ledger run
+            config.db_transactions_config['db_log_dir'] = '/dev/null'
+        storage = get_storage(args.type, ledger_data_dir)
+        print_txns(storage, args)
+    finally:
+        if read_copy_ledger_data_dir:
+            shutil.rmtree(read_copy_ledger_data_dir)
