@@ -10,9 +10,9 @@ sudo python3 init_indy_node.py \
 
 sudo python3 create_domain_ledger_genesis_file.py \
 --stewardDids \
-"RnXJMDxifkBaceAkPizz8F, AmJHyEZ9ofrPz1DUfx97Qo, PeVR5pdFizbK8WN9THd3mq" \
+"RnXJMDxifkBaceAkPizz8F, AmJHyEZ9ofrPz1DUfx97Qo, HBgMBsgaEytzE38djLfNe7" \
 --stewardVerkeys \
-"~9F4P9aQysR1YATnARMuhxt, ~CVv3mmR7QPanynNMJmTG9f, ~VPwSf359RqMB6TP5X728WJ" \
+"~9F4P9aQysR1YATnARMuhxt, ~CVv3mmR7QPanynNMJmTG9f, ~H9LbyNQEZPR1oKzBaNMrDW" \
 --trusteeDids \
 "L4vaBJDbZiaX68mVHLuZ2E" \
 --trusteeVerkeys \
