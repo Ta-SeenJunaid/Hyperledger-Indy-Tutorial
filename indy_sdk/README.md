@@ -1,0 +1,1 @@
+[The code is taken from Hyperledger Indy SDK github repository.](https://github.com/hyperledger/indy-sdk)
