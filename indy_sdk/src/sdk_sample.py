@@ -8,6 +8,8 @@ import logging
 import argparse
 import sys
 from ctypes import *
+from os.path import dirname
+
 from indy.error import ErrorCode, IndyError
 
 from src.utils import get_pool_genesis_txn_path, run_coroutine, PROTOCOL_VERSION, ensure_previous_request_applied
@@ -331,6 +333,197 @@ async def run():
                                             satoshi['transcript_cred'], satoshi['transcript_cred_def'], None)
 
 
+    logger.info("==============================")
+    logger.info("== Apply for the job with Company - Transcript proving ==")
+    logger.info("------------------------------")
+
+    logger.info("\"Company\" -> Create \"Job-Application\" Proof Request")
+    nonce = await anoncreds.generate_nonce()
+    company['job_application_proof_request'] = json.dumps({
+        'nonce': nonce,
+        'name': 'Job-Application',
+        'version': '0.1',
+        'requested_attributes': {
+            'attr1_referent': {
+                'name': 'first_name'
+            },
+            'attr2_referent': {
+                'name': 'last_name'
+            },
+            'attr3_referent': {
+                'name': 'degree',
+                'restrictions': [{'cred_def_id': college['transcript_cred_def_id']}]
+            },
+            'attr4_referent': {
+                'name': 'status',
+                'restrictions': [{'cred_def_id': college['transcript_cred_def_id']}]
+            },
+            'attr5_referent': {
+                'name': 'ssn',
+                'restrictions': [{'cred_def_id': college['transcript_cred_def_id']}]
+            },
+            'attr6_referent': {
+                'name': 'phone_number'
+            }
+        },
+        'requested_predicates': {
+            'predicate1_referent': {
+                'name': 'average',
+                'p_type': '>=',
+                'p_value': 4,
+                'restrictions': [{'cred_def_id': college['transcript_cred_def_id']}]
+            }
+        }
+    })
+
+    logger.info("\"Company\" -> Send \"Job-Application\" Proof Request to Satoshi")
+    satoshi['job_application_proof_request'] = company['job_application_proof_request']
+
+    logger.info("\"Satoshi\" -> Get credentials for \"Job-Application\" Proof Request")
+
+    search_for_job_application_proof_request = \
+        await anoncreds.prover_search_credentials_for_proof_req(satoshi['wallet'],
+                                                                satoshi['job_application_proof_request'], None)
+
+    cred_for_attr1 = await get_credential_for_referent(search_for_job_application_proof_request, 'attr1_referent')
+    cred_for_attr2 = await get_credential_for_referent(search_for_job_application_proof_request, 'attr2_referent')
+    cred_for_attr3 = await get_credential_for_referent(search_for_job_application_proof_request, 'attr3_referent')
+    cred_for_attr4 = await get_credential_for_referent(search_for_job_application_proof_request, 'attr4_referent')
+    cred_for_attr5 = await get_credential_for_referent(search_for_job_application_proof_request, 'attr5_referent')
+    cred_for_predicate1 = \
+        await get_credential_for_referent(search_for_job_application_proof_request, 'predicate1_referent')
+
+    await anoncreds.prover_close_credentials_search_for_proof_req(search_for_job_application_proof_request)
+
+    satoshi['creds_for_job_application_proof'] = {cred_for_attr1['referent']: cred_for_attr1,
+                                                cred_for_attr2['referent']: cred_for_attr2,
+                                                cred_for_attr3['referent']: cred_for_attr3,
+                                                cred_for_attr4['referent']: cred_for_attr4,
+                                                cred_for_attr5['referent']: cred_for_attr5,
+                                                cred_for_predicate1['referent']: cred_for_predicate1}
+
+    satoshi['schemas_for_job_application'], satoshi['cred_defs_for_job_application'], \
+    satoshi['revoc_states_for_job_application'] = \
+        await prover_get_entities_from_ledger(satoshi['pool'], satoshi['did'],
+                                              satoshi['creds_for_job_application_proof'], satoshi['name'])
+
+    logger.info("\"Satoshi\" -> Create \"Job-Application\" Proof")
+    satoshi['job_application_requested_creds'] = json.dumps({
+        'self_attested_attributes': {
+            'attr1_referent': 'Satoshi',
+            'attr2_referent': 'Garcia',
+            'attr6_referent': '123-45-6789'
+        },
+        'requested_attributes': {
+            'attr3_referent': {'cred_id': cred_for_attr3['referent'], 'revealed': True},
+            'attr4_referent': {'cred_id': cred_for_attr4['referent'], 'revealed': True},
+            'attr5_referent': {'cred_id': cred_for_attr5['referent'], 'revealed': True},
+        },
+        'requested_predicates': {'predicate1_referent': {'cred_id': cred_for_predicate1['referent']}}
+    })
+
+    satoshi['job_application_proof'] = \
+        await anoncreds.prover_create_proof(satoshi['wallet'], satoshi['job_application_proof_request'],
+                                            satoshi['job_application_requested_creds'], satoshi['master_secret_id'],
+                                            satoshi['schemas_for_job_application'],
+                                            satoshi['cred_defs_for_job_application'],
+                                            satoshi['revoc_states_for_job_application'])
+
+    logger.info("\"Satoshi\" -> Send \"Job-Application\" Proof to Company")
+    company['job_application_proof'] = satoshi['job_application_proof']
+
+    job_application_proof_object = json.loads(company['job_application_proof'])
+
+    company['schemas_for_job_application'], company['cred_defs_for_job_application'], \
+    company['revoc_ref_defs_for_job_application'], company['revoc_regs_for_job_application'] = \
+        await verifier_get_entities_from_ledger(company['pool'], company['did'],
+                                                job_application_proof_object['identifiers'], company['name'])
+
+    logger.info("\"Company\" -> Verify \"Job-Application\" Proof from Satoshi")
+    assert 'Bachelor of Science, Marketing' == \
+           job_application_proof_object['requested_proof']['revealed_attrs']['attr3_referent']['raw']
+    assert 'graduated' == \
+           job_application_proof_object['requested_proof']['revealed_attrs']['attr4_referent']['raw']
+    assert '123-45-6789' == \
+           job_application_proof_object['requested_proof']['revealed_attrs']['attr5_referent']['raw']
+
+    assert 'Satoshi' == job_application_proof_object['requested_proof']['self_attested_attrs']['attr1_referent']
+    assert 'Garcia' == job_application_proof_object['requested_proof']['self_attested_attrs']['attr2_referent']
+    assert '123-45-6789' == job_application_proof_object['requested_proof']['self_attested_attrs']['attr6_referent']
+
+    assert await anoncreds.verifier_verify_proof(company['job_application_proof_request'], company['job_application_proof'],
+                                                 company['schemas_for_job_application'],
+                                                 company['cred_defs_for_job_application'],
+                                                 company['revoc_ref_defs_for_job_application'],
+                                                 company['revoc_regs_for_job_application'])
+
+    logger.info("==============================")
+    logger.info("== Apply for the job with Company - Getting Job-Certificate Credential ==")
+    logger.info("------------------------------")
+
+    logger.info("\"Company\" -> Create \"Job-Certificate\" Credential Offer for Satoshi")
+    company['job_certificate_cred_offer'] = \
+        await anoncreds.issuer_create_credential_offer(company['wallet'], company['job_certificate_cred_def_id'])
+
+    logger.info("\"Company\" -> Send \"Job-Certificate\" Credential Offer to Satoshi")
+    satoshi['job_certificate_cred_offer'] = company['job_certificate_cred_offer']
+
+    job_certificate_cred_offer_object = json.loads(satoshi['job_certificate_cred_offer'])
+
+    logger.info("\"Satoshi\" -> Get \"Company Job-Certificate\" Credential Definition from Ledger")
+    (satoshi['company_job_certificate_cred_def_id'], satoshi['company_job_certificate_cred_def']) = \
+        await get_cred_def(satoshi['pool'], satoshi['did'], job_certificate_cred_offer_object['cred_def_id'])
+
+    logger.info("\"Satoshi\" -> Create and store in Wallet \"Job-Certificate\" Credential Request for Company")
+    (satoshi['job_certificate_cred_request'], satoshi['job_certificate_cred_request_metadata']) = \
+        await anoncreds.prover_create_credential_req(satoshi['wallet'], satoshi['did'],
+                                                     satoshi['job_certificate_cred_offer'],
+                                                     satoshi['company_job_certificate_cred_def'], satoshi['master_secret_id'])
+
+    logger.info("\"Satoshi\" -> Send \"Job-Certificate\" Credential Request to Company")
+    satoshi['job_certificate_cred_values'] = json.dumps({
+        "first_name": {"raw": "Satoshi", "encoded": "245712572474217942457235975012103335"},
+        "last_name": {"raw": "Garcia", "encoded": "312643218496194691632153761283356127"},
+        "employee_status": {"raw": "Permanent", "encoded": "2143135425425143112321314321"},
+        "salary": {"raw": "2400", "encoded": "2400"},
+        "experience": {"raw": "10", "encoded": "10"}
+    })
+    company['job_certificate_cred_request'] = satoshi['job_certificate_cred_request']
+    company['job_certificate_cred_values'] = satoshi['job_certificate_cred_values']
+
+    logger.info("\"Company\" -> Create \"Job-Certificate\" Credential for Satoshi")
+    company['blob_storage_reader_cfg_handle'] = await blob_storage.open_reader('default', company['tails_writer_config'])
+    company['job_certificate_cred'], company['job_certificate_cred_rev_id'], company['satoshi_cert_rev_reg_delta'] = \
+        await anoncreds.issuer_create_credential(company['wallet'], company['job_certificate_cred_offer'],
+                                                 company['job_certificate_cred_request'],
+                                                 company['job_certificate_cred_values'],
+                                                 company['revoc_reg_id'],
+                                                 company['blob_storage_reader_cfg_handle'])
+
+    logger.info("\"Company\" -> Post Revocation Registry Delta to Ledger")
+    company['revoc_reg_entry_req'] = \
+        await ledger.build_revoc_reg_entry_request(company['did'], company['revoc_reg_id'], 'CL_ACCUM',
+                                                   company['satoshi_cert_rev_reg_delta'])
+    await ledger.sign_and_submit_request(company['pool'], company['wallet'], company['did'], company['revoc_reg_entry_req'])
+
+    logger.info("\"Company\" -> Send \"Job-Certificate\" Credential to Satoshi")
+    satoshi['job_certificate_cred'] = company['job_certificate_cred']
+    job_certificate_cred_object = json.loads(satoshi['job_certificate_cred'])
+
+    logger.info("\"Satoshi\" -> Gets RevocationRegistryDefinition for \"Job-Certificate\" Credential from Company")
+    satoshi['company_revoc_reg_des_req'] = \
+        await ledger.build_get_revoc_reg_def_request(satoshi['did'],
+                                                     job_certificate_cred_object['rev_reg_id'])
+    satoshi['company_revoc_reg_des_resp'] = \
+        await ensure_previous_request_applied(satoshi['pool'], satoshi['company_revoc_reg_des_req'],
+                                              lambda response: response['result']['data'] is not None)
+    (satoshi['company_revoc_reg_def_id'], satoshi['company_revoc_reg_def_json']) = \
+        await ledger.parse_get_revoc_reg_def_response(satoshi['company_revoc_reg_des_resp'])
+
+    logger.info("\"Satoshi\" -> Store \"Job-Certificate\" Credential")
+    await anoncreds.prover_store_credential(satoshi['wallet'], None, satoshi['job_certificate_cred_request_metadata'],
+                                            satoshi['job_certificate_cred'],
+                                            satoshi['company_job_certificate_cred_def'], satoshi['company_revoc_reg_def_json'])
 
     logger.info("==============================")
 
@@ -443,6 +636,104 @@ async def get_cred_def(pool_handle, _did, cred_def_id):
         await ensure_previous_request_applied(pool_handle, get_cred_def_request,
                                               lambda response: response['result']['data'] is not None)
     return await ledger.parse_get_cred_def_response(get_cred_def_response)
+
+async def get_credential_for_referent(search_handle, referent):
+    credentials = json.loads(
+        await anoncreds.prover_fetch_credentials_for_proof_req(search_handle, referent, 10))
+    return credentials[0]['cred_info']
+
+def get_timestamp_for_attribute(cred_for_attribute, revoc_states):
+    if cred_for_attribute['rev_reg_id'] in revoc_states:
+        return int(next(iter(revoc_states[cred_for_attribute['rev_reg_id']])))
+    else:
+        return None
+
+
+async def prover_get_entities_from_ledger(pool_handle, _did, identifiers, actor, timestamp_from=None,
+                                          timestamp_to=None):
+    schemas = {}
+    cred_defs = {}
+    rev_states = {}
+    for item in identifiers.values():
+        logger.info("\"{}\" -> Get Schema from Ledger".format(actor))
+        (received_schema_id, received_schema) = await get_schema(pool_handle, _did, item['schema_id'])
+        schemas[received_schema_id] = json.loads(received_schema)
+
+        logger.info("\"{}\" -> Get Claim Definition from Ledger".format(actor))
+        (received_cred_def_id, received_cred_def) = await get_cred_def(pool_handle, _did, item['cred_def_id'])
+        cred_defs[received_cred_def_id] = json.loads(received_cred_def)
+
+        if 'rev_reg_id' in item and item['rev_reg_id'] is not None:
+            # Create Revocations States
+            logger.info("\"{}\" -> Get Revocation Registry Definition from Ledger".format(actor))
+            get_revoc_reg_def_request = await ledger.build_get_revoc_reg_def_request(_did, item['rev_reg_id'])
+
+            get_revoc_reg_def_response = \
+                await ensure_previous_request_applied(pool_handle, get_revoc_reg_def_request,
+                                                      lambda response: response['result']['data'] is not None)
+            (rev_reg_id, revoc_reg_def_json) = await ledger.parse_get_revoc_reg_def_response(get_revoc_reg_def_response)
+
+            logger.info("\"{}\" -> Get Revocation Registry Delta from Ledger".format(actor))
+            if not timestamp_to: timestamp_to = int(time.time())
+            get_revoc_reg_delta_request = \
+                await ledger.build_get_revoc_reg_delta_request(_did, item['rev_reg_id'], timestamp_from, timestamp_to)
+            get_revoc_reg_delta_response = \
+                await ensure_previous_request_applied(pool_handle, get_revoc_reg_delta_request,
+                                                      lambda response: response['result']['data'] is not None)
+            (rev_reg_id, revoc_reg_delta_json, t) = \
+                await ledger.parse_get_revoc_reg_delta_response(get_revoc_reg_delta_response)
+
+            tails_reader_config = json.dumps(
+                {'base_dir': dirname(json.loads(revoc_reg_def_json)['value']['tailsLocation']),
+                 'uri_pattern': ''})
+            blob_storage_reader_cfg_handle = await blob_storage.open_reader('default', tails_reader_config)
+
+            logger.info('%s - Create Revocation State', actor)
+            rev_state_json = \
+                await anoncreds.create_revocation_state(blob_storage_reader_cfg_handle, revoc_reg_def_json,
+                                                        revoc_reg_delta_json, t, item['cred_rev_id'])
+            rev_states[rev_reg_id] = {t: json.loads(rev_state_json)}
+
+    return json.dumps(schemas), json.dumps(cred_defs), json.dumps(rev_states)
+
+
+async def verifier_get_entities_from_ledger(pool_handle, _did, identifiers, actor, timestamp=None):
+    schemas = {}
+    cred_defs = {}
+    rev_reg_defs = {}
+    rev_regs = {}
+    for item in identifiers:
+        logger.info("\"{}\" -> Get Schema from Ledger".format(actor))
+        (received_schema_id, received_schema) = await get_schema(pool_handle, _did, item['schema_id'])
+        schemas[received_schema_id] = json.loads(received_schema)
+
+        logger.info("\"{}\" -> Get Claim Definition from Ledger".format(actor))
+        (received_cred_def_id, received_cred_def) = await get_cred_def(pool_handle, _did, item['cred_def_id'])
+        cred_defs[received_cred_def_id] = json.loads(received_cred_def)
+
+        if 'rev_reg_id' in item and item['rev_reg_id'] is not None:
+            # Get Revocation Definitions and Revocation Registries
+            logger.info("\"{}\" -> Get Revocation Definition from Ledger".format(actor))
+            get_revoc_reg_def_request = await ledger.build_get_revoc_reg_def_request(_did, item['rev_reg_id'])
+
+            get_revoc_reg_def_response = \
+                await ensure_previous_request_applied(pool_handle, get_revoc_reg_def_request,
+                                                      lambda response: response['result']['data'] is not None)
+            (rev_reg_id, revoc_reg_def_json) = await ledger.parse_get_revoc_reg_def_response(get_revoc_reg_def_response)
+
+            logger.info("\"{}\" -> Get Revocation Registry from Ledger".format(actor))
+            if not timestamp: timestamp = item['timestamp']
+            get_revoc_reg_request = \
+                await ledger.build_get_revoc_reg_request(_did, item['rev_reg_id'], timestamp)
+            get_revoc_reg_response = \
+                await ensure_previous_request_applied(pool_handle, get_revoc_reg_request,
+                                                      lambda response: response['result']['data'] is not None)
+            (rev_reg_id, rev_reg_json, timestamp2) = await ledger.parse_get_revoc_reg_response(get_revoc_reg_response)
+
+            rev_regs[rev_reg_id] = {timestamp2: json.loads(rev_reg_json)}
+            rev_reg_defs[rev_reg_id] = json.loads(revoc_reg_def_json)
+
+    return json.dumps(schemas), json.dumps(cred_defs), json.dumps(rev_reg_defs), json.dumps(rev_regs)
 
 
 
