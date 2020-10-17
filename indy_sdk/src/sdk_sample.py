@@ -1,6 +1,6 @@
 import time
 
-from indy import  did, ledger, pool, wallet
+from indy import  anoncreds, did, ledger, pool, wallet, blob_storage
 
 import json
 import logging
@@ -155,6 +155,109 @@ async def run():
     await getting_verinym(steward, bank)
 
 
+    logger.info("==============================")
+    logger.info("=== Credential Schemas Setup ==")
+    logger.info("------------------------------")
+
+    logger.info("\"Government\" -> Create \"Job-Certificate\" Schema")
+    job_certificate = {
+        'name': 'Job-Certificate',
+        'version': '0.2',
+        'attributes': ['first_name', 'last_name', 'salary', 'employee_status', 'experience']
+    }
+    (government['job_certificate_schema_id'], government['job_certificate_schema']) = \
+        await anoncreds.issuer_create_schema(government['did'], job_certificate['name'], job_certificate['version'],
+                                             json.dumps(job_certificate['attributes']))
+    job_certificate_schema_id = government['job_certificate_schema_id']
+
+    logger.info("\"Government\" -> Send \"Job-Certificate\" Schema to Ledger")
+    await send_schema(government['pool'], government['wallet'], government['did'], government['job_certificate_schema'])
+
+    logger.info("\"Government\" -> Create \"Transcript\" Schema")
+    transcript = {
+        'name': 'Transcript',
+        'version': '1.2',
+        'attributes': ['first_name', 'last_name', 'degree', 'status', 'year', 'average', 'ssn']
+    }
+    (government['transcript_schema_id'], government['transcript_schema']) = \
+        await anoncreds.issuer_create_schema(government['did'], transcript['name'], transcript['version'],
+                                             json.dumps(transcript['attributes']))
+    transcript_schema_id = government['transcript_schema_id']
+
+    logger.info("\"Government\" -> Send \"Transcript\" Schema to Ledger")
+    await send_schema(government['pool'], government['wallet'], government['did'], government['transcript_schema'])
+
+    time.sleep(1)  
+
+
+    logger.info("==============================")
+    logger.info("=== College Credential Definition Setup ==")
+    logger.info("------------------------------")
+
+    logger.info("\"College\" -> Get \"Transcript\" Schema from Ledger")
+    (college['transcript_schema_id'], college['transcript_schema']) = \
+        await get_schema(college['pool'], college['did'], transcript_schema_id)
+
+    logger.info("\"College\" -> Create and store in Wallet \"College Transcript\" Credential Definition")
+    transcript_cred_def = {
+        'tag': 'TAG1',
+        'type': 'CL',
+        'config': {"support_revocation": False}
+    }
+    (college['transcript_cred_def_id'], college['transcript_cred_def']) = \
+        await anoncreds.issuer_create_and_store_credential_def(college['wallet'], college['did'],
+                                                               college['transcript_schema'], transcript_cred_def['tag'],
+                                                               transcript_cred_def['type'],
+                                                               json.dumps(transcript_cred_def['config']))
+
+    logger.info("\"College\" -> Send  \"College Transcript\" Credential Definition to Ledger")
+    await send_cred_def(college['pool'], college['wallet'], college['did'], college['transcript_cred_def'])
+
+
+    logger.info("==============================")
+    logger.info("=== Company Credential Definition Setup ==")
+    logger.info("------------------------------")
+
+    logger.info("\"Company\" -> Get from Ledger \"Job-Certificate\" Schema")
+    (company['job_certificate_schema_id'], company['job_certificate_schema']) = \
+        await get_schema(company['pool'], company['did'], job_certificate_schema_id)
+
+    logger.info("\"Company\" -> Create and store in Wallet \"Company Job-Certificate\" Credential Definition")
+    job_certificate_cred_def = {
+        'tag': 'TAG1',
+        'type': 'CL',
+        'config': {"support_revocation": True}
+    }
+    (company['job_certificate_cred_def_id'], company['job_certificate_cred_def']) = \
+        await anoncreds.issuer_create_and_store_credential_def(company['wallet'], company['did'],
+                                                               company['job_certificate_schema'],
+                                                               job_certificate_cred_def['tag'],
+                                                               job_certificate_cred_def['type'],
+                                                               json.dumps(job_certificate_cred_def['config']))
+
+    logger.info("\"Company\" -> Send \"Company Job-Certificate\" Credential Definition to Ledger")
+    await send_cred_def(company['pool'], company['wallet'], company['did'], company['job_certificate_cred_def'])
+
+    logger.info("\"Company\" -> Creates Revocation Registry")
+    company['tails_writer_config'] = json.dumps({'base_dir': "/tmp/indy_company_tails", 'uri_pattern': ''})
+    tails_writer = await blob_storage.open_writer('default', company['tails_writer_config'])
+    (company['revoc_reg_id'], company['revoc_reg_def'], company['revoc_reg_entry']) = \
+        await anoncreds.issuer_create_and_store_revoc_reg(company['wallet'], company['did'], 'CL_ACCUM', 'TAG1',
+                                                          company['job_certificate_cred_def_id'],
+                                                          json.dumps({'max_cred_num': 5,
+                                                                      'issuance_type': 'ISSUANCE_ON_DEMAND'}),
+                                                          tails_writer)
+
+    logger.info("\"Company\" -> Post Revocation Registry Definition to Ledger")
+    company['revoc_reg_def_request'] = await ledger.build_revoc_reg_def_request(company['did'], company['revoc_reg_def'])
+    await ledger.sign_and_submit_request(company['pool'], company['wallet'], company['did'], company['revoc_reg_def_request'])
+
+    logger.info("\"Company\" -> Post Revocation Registry Entry to Ledger")
+    company['revoc_reg_entry_request'] = \
+        await ledger.build_revoc_reg_entry_request(company['did'], company['revoc_reg_id'], 'CL_ACCUM',
+                                                   company['revoc_reg_entry'])
+    await ledger.sign_and_submit_request(company['pool'], company['wallet'], company['did'], company['revoc_reg_entry_request'])
+
 
 
 
@@ -244,6 +347,20 @@ async def getting_verinym(from_, to):
 async def send_nym(pool_handle, wallet_handle, _did, new_did, new_key, role):
     nym_request = await ledger.build_nym_request(_did, new_did, new_key, None, role)
     await ledger.sign_and_submit_request(pool_handle, wallet_handle, _did, nym_request)
+
+async def send_schema(pool_handle, wallet_handle, _did, schema):
+    schema_request = await ledger.build_schema_request(_did, schema)
+    await ledger.sign_and_submit_request(pool_handle, wallet_handle, _did, schema_request)
+
+async def send_cred_def(pool_handle, wallet_handle, _did, cred_def_json):
+    cred_def_request = await ledger.build_cred_def_request(_did, cred_def_json)
+    await ledger.sign_and_submit_request(pool_handle, wallet_handle, _did, cred_def_request)
+
+async def get_schema(pool_handle, _did, schema_id):
+    get_schema_request = await ledger.build_get_schema_request(_did, schema_id)
+    get_schema_response = await ensure_previous_request_applied(
+        pool_handle, get_schema_request, lambda response: response['result']['data'] is not None)
+    return await ledger.parse_get_schema_response(get_schema_response)
 
 
 
