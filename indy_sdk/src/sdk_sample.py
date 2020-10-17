@@ -10,7 +10,7 @@ import sys
 from ctypes import *
 from indy.error import ErrorCode, IndyError
 
-from src.utils import get_pool_genesis_txn_path, run_coroutine, PROTOCOL_VERSION
+from src.utils import get_pool_genesis_txn_path, run_coroutine, PROTOCOL_VERSION, ensure_previous_request_applied
 
 
 logger = logging.getLogger(__name__)
@@ -259,6 +259,76 @@ async def run():
     await ledger.sign_and_submit_request(company['pool'], company['wallet'], company['did'], company['revoc_reg_entry_request'])
 
 
+    logger.info("==============================")
+    logger.info("=== Getting Transcript with College ==")
+    logger.info("==============================")
+    logger.info("== Satoshi setup ==")
+    logger.info("------------------------------")
+
+    satoshi = {
+        'name': 'Satoshi',
+        'wallet_config': json.dumps({'id': 'satoshi_wallet'}),
+        'wallet_credentials': json.dumps({'key': 'satoshi_wallet_key'}),
+        'pool': pool_['handle'],
+    }
+    await create_wallet(satoshi)
+    (satoshi['did'], satoshi['key']) = await did.create_and_store_my_did(satoshi['wallet'], "{}")
+
+    logger.info("==============================")
+    logger.info("== Getting Transcript with College - Getting Transcript Credential ==")
+    logger.info("------------------------------")
+
+    logger.info("\"College\" -> Create \"Transcript\" Credential Offer for Satoshi")
+    college['transcript_cred_offer'] = \
+        await anoncreds.issuer_create_credential_offer(college['wallet'], college['transcript_cred_def_id'])
+
+    logger.info("\"College\" -> Send \"Transcript\" Credential Offer to Satoshi")
+    satoshi['transcript_cred_offer'] = college['transcript_cred_offer']
+    transcript_cred_offer_object = json.loads(satoshi['transcript_cred_offer'])
+
+    satoshi['transcript_schema_id'] = transcript_cred_offer_object['schema_id']
+    satoshi['transcript_cred_def_id'] = transcript_cred_offer_object['cred_def_id']
+
+    logger.info("\"Satoshi\" -> Create and store \"Satoshi\" Master Secret in Wallet")
+    satoshi['master_secret_id'] = await anoncreds.prover_create_master_secret(satoshi['wallet'], None)
+
+    logger.info("\"Satoshi\" -> Get \"College Transcript\" Credential Definition from Ledger")
+    (satoshi['college_transcript_cred_def_id'], satoshi['college_transcript_cred_def']) = \
+        await get_cred_def(satoshi['pool'], satoshi['did'], satoshi['transcript_cred_def_id'])
+
+    logger.info("\"Satoshi\" -> Create \"Transcript\" Credential Request for College")
+    (satoshi['transcript_cred_request'], satoshi['transcript_cred_request_metadata']) = \
+        await anoncreds.prover_create_credential_req(satoshi['wallet'], satoshi['did'],
+                                                     satoshi['transcript_cred_offer'], satoshi['college_transcript_cred_def'],
+                                                     satoshi['master_secret_id'])
+
+    logger.info("\"Satoshi\" -> Send \"Transcript\" Credential Request to College")
+    college['transcript_cred_request'] = satoshi['transcript_cred_request']
+
+    logger.info("\"College\" -> Create \"Transcript\" Credential for Satoshi")
+    college['satoshi_transcript_cred_values'] = json.dumps({
+        "first_name": {"raw": "Satoshi", "encoded": "1139481716457488690172217916278103335"},
+        "last_name": {"raw": "Garcia", "encoded": "5321642780241790123587902456789123452"},
+        "degree": {"raw": "Bachelor of Science, Marketing", "encoded": "12434523576212321"},
+        "status": {"raw": "graduated", "encoded": "2213454313412354"},
+        "ssn": {"raw": "123-45-6789", "encoded": "3124141231422543541"},
+        "year": {"raw": "2015", "encoded": "2015"},
+        "average": {"raw": "5", "encoded": "5"}
+    })
+    college['transcript_cred'], _, _ = \
+        await anoncreds.issuer_create_credential(college['wallet'], college['transcript_cred_offer'],
+                                                 college['transcript_cred_request'],
+                                                 college['satoshi_transcript_cred_values'], None, None)
+
+    logger.info("\"College\" -> Send \"Transcript\" Credential to Satoshi")
+    satoshi['transcript_cred'] = college['transcript_cred']
+
+    logger.info("\"Satoshi\" -> Store \"Transcript\" Credential from College")
+    _, satoshi['transcript_cred_def'] = await get_cred_def(satoshi['pool'], satoshi['did'],
+                                                         satoshi['transcript_cred_def_id'])
+
+    await anoncreds.prover_store_credential(satoshi['wallet'], None, satoshi['transcript_cred_request_metadata'],
+                                            satoshi['transcript_cred'], satoshi['transcript_cred_def'], None)
 
 
 
@@ -287,6 +357,11 @@ async def run():
     await wallet.close_wallet(bank['wallet'])
     await wallet.delete_wallet(wallet_config("delete", bank['wallet_config']),
                                wallet_credentials("delete", bank['wallet_credentials']))
+
+    logger.info("\"Satoshi\" -> Close and Delete wallet")
+    await wallet.close_wallet(satoshi['wallet'])
+    await wallet.delete_wallet(wallet_config("delete", satoshi['wallet_config']),
+                               wallet_credentials("delete", satoshi['wallet_credentials']))
 
     logger.info("Close and Delete pool")
     await pool.close_pool_ledger(pool_['handle'])
@@ -361,6 +436,13 @@ async def get_schema(pool_handle, _did, schema_id):
     get_schema_response = await ensure_previous_request_applied(
         pool_handle, get_schema_request, lambda response: response['result']['data'] is not None)
     return await ledger.parse_get_schema_response(get_schema_response)
+
+async def get_cred_def(pool_handle, _did, cred_def_id):
+    get_cred_def_request = await ledger.build_get_cred_def_request(_did, cred_def_id)
+    get_cred_def_response = \
+        await ensure_previous_request_applied(pool_handle, get_cred_def_request,
+                                              lambda response: response['result']['data'] is not None)
+    return await ledger.parse_get_cred_def_response(get_cred_def_response)
 
 
 
