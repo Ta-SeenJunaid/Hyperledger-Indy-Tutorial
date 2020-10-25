@@ -1,3 +1,4 @@
+#Actual source code: https://github.com/hyperledger/indy-sdk/blob/master/samples/python/src/getting_started.py
 import time
 
 from indy import  anoncreds, did, ledger, pool, wallet, blob_storage
@@ -524,6 +525,217 @@ async def run():
     await anoncreds.prover_store_credential(satoshi['wallet'], None, satoshi['job_certificate_cred_request_metadata'],
                                             satoshi['job_certificate_cred'],
                                             satoshi['company_job_certificate_cred_def'], satoshi['company_revoc_reg_def_json'])
+
+    logger.info("==============================")
+    logger.info("=== Apply for the loan with Bank ==")
+    logger.info("==============================")
+
+
+    async def apply_loan_basic():
+        # This method will be called twice: once with a valid Job-Certificate and
+        # the second time after the Job-Certificate has been revoked.
+        logger.info("==============================")
+        logger.info("== Apply for the loan with Bank - Job-Certificate proving  ==")
+        logger.info("------------------------------")
+
+        logger.info("\"Bank\" -> Create \"Loan-Application-Basic\" Proof Request")
+        nonce = await anoncreds.generate_nonce()
+        bank['apply_loan_proof_request'] = json.dumps({
+            'nonce': nonce,
+            'name': 'Loan-Application-Basic',
+            'version': '0.1',
+            'requested_attributes': {
+                'attr1_referent': {
+                    'name': 'employee_status',
+                    'restrictions': [{'cred_def_id': company['job_certificate_cred_def_id']}]
+                }
+            },
+            'requested_predicates': {
+                'predicate1_referent': {
+                    'name': 'salary',
+                    'p_type': '>=',
+                    'p_value': 2000,
+                    'restrictions': [{'cred_def_id': company['job_certificate_cred_def_id']}]
+                },
+                'predicate2_referent': {
+                    'name': 'experience',
+                    'p_type': '>=',
+                    'p_value': 1,
+                    'restrictions': [{'cred_def_id': company['job_certificate_cred_def_id']}]
+                }
+            },
+            'non_revoked': {'to': int(time.time())}
+        })
+
+        logger.info("\"Bank\" -> Send \"Loan-Application-Basic\" Proof Request to Satoshi")
+        satoshi['apply_loan_proof_request'] = bank['apply_loan_proof_request']
+
+        logger.info("\"Satoshi\" -> Get credentials for \"Loan-Application-Basic\" Proof Request")
+
+        search_for_apply_loan_proof_request = \
+            await anoncreds.prover_search_credentials_for_proof_req(satoshi['wallet'],
+                                                                    satoshi['apply_loan_proof_request'], None)
+
+        cred_for_attr1 = await get_credential_for_referent(search_for_apply_loan_proof_request, 'attr1_referent')
+        cred_for_predicate1 = await get_credential_for_referent(search_for_apply_loan_proof_request,
+                                                                'predicate1_referent')
+        cred_for_predicate2 = await get_credential_for_referent(search_for_apply_loan_proof_request,
+                                                                'predicate2_referent')
+
+        await anoncreds.prover_close_credentials_search_for_proof_req(search_for_apply_loan_proof_request)
+
+        satoshi['creds_for_apply_loan_proof'] = {cred_for_attr1['referent']: cred_for_attr1,
+                                               cred_for_predicate1['referent']: cred_for_predicate1,
+                                               cred_for_predicate2['referent']: cred_for_predicate2}
+
+        requested_timestamp = int(json.loads(bank['apply_loan_proof_request'])['non_revoked']['to'])
+        satoshi['schemas_for_loan_app'], satoshi['cred_defs_for_loan_app'], satoshi['revoc_states_for_loan_app'] = \
+            await prover_get_entities_from_ledger(satoshi['pool'], satoshi['did'],
+                                                  satoshi['creds_for_apply_loan_proof'],
+                                                  satoshi['name'], None, requested_timestamp)
+
+        logger.info("\"Satoshi\" -> Create \"Loan-Application-Basic\" Proof")
+        revoc_states_for_loan_app = json.loads(satoshi['revoc_states_for_loan_app'])
+        timestamp_for_attr1 = get_timestamp_for_attribute(cred_for_attr1, revoc_states_for_loan_app)
+        timestamp_for_predicate1 = get_timestamp_for_attribute(cred_for_predicate1, revoc_states_for_loan_app)
+        timestamp_for_predicate2 = get_timestamp_for_attribute(cred_for_predicate2, revoc_states_for_loan_app)
+        satoshi['apply_loan_requested_creds'] = json.dumps({
+            'self_attested_attributes': {},
+            'requested_attributes': {
+                'attr1_referent': {'cred_id': cred_for_attr1['referent'], 'revealed': True,
+                                   'timestamp': timestamp_for_attr1}
+            },
+            'requested_predicates': {
+                'predicate1_referent': {'cred_id': cred_for_predicate1['referent'],
+                                        'timestamp': timestamp_for_predicate1},
+                'predicate2_referent': {'cred_id': cred_for_predicate2['referent'],
+                                        'timestamp': timestamp_for_predicate2}
+            }
+        })
+        satoshi['apply_loan_proof'] = \
+            await anoncreds.prover_create_proof(satoshi['wallet'], satoshi['apply_loan_proof_request'],
+                                                satoshi['apply_loan_requested_creds'], satoshi['master_secret_id'],
+                                                satoshi['schemas_for_loan_app'], satoshi['cred_defs_for_loan_app'],
+                                                satoshi['revoc_states_for_loan_app'])
+
+        logger.info("\"Satoshi\" -> Send \"Loan-Application-Basic\" Proof to Bank")
+        bank['apply_loan_proof'] = satoshi['apply_loan_proof']
+        apply_loan_proof_object = json.loads(bank['apply_loan_proof'])
+
+        logger.info("\"Bank\" -> Get Schemas, Credential Definitions and Revocation Registries from Ledger"
+                    " required for Proof verifying")
+
+        bank['schemas_for_loan_app'], bank['cred_defs_for_loan_app'], bank['revoc_defs_for_loan_app'], \
+        bank['revoc_regs_for_loan_app'] = \
+            await verifier_get_entities_from_ledger(bank['pool'], bank['did'],
+                                                    apply_loan_proof_object['identifiers'],
+                                                    bank['name'], requested_timestamp)
+
+        logger.info("\"Bank\" -> Verify \"Loan-Application-Basic\" Proof from Satoshi")
+        assert 'Permanent' == \
+               apply_loan_proof_object['requested_proof']['revealed_attrs']['attr1_referent']['raw']
+
+
+    await apply_loan_basic()
+
+    assert await anoncreds.verifier_verify_proof(bank['apply_loan_proof_request'],
+                                                 bank['apply_loan_proof'],
+                                                 bank['schemas_for_loan_app'],
+                                                 bank['cred_defs_for_loan_app'],
+                                                 bank['revoc_defs_for_loan_app'],
+                                                 bank['revoc_regs_for_loan_app'])
+
+    logger.info("==============================")
+    logger.info("== Apply for the loan with Bank - Transcript and Job-Certificate proving  ==")
+    logger.info("------------------------------")
+
+    logger.info("\"Bank\" -> Create \"Loan-Application-KYC\" Proof Request")
+    nonce = await anoncreds.generate_nonce()
+    bank['apply_loan_kyc_proof_request'] = json.dumps({
+        'nonce': nonce,
+        'name': 'Loan-Application-KYC',
+        'version': '0.1',
+        'requested_attributes': {
+            'attr1_referent': {'name': 'first_name'},
+            'attr2_referent': {'name': 'last_name'},
+            'attr3_referent': {'name': 'ssn'}
+        },
+        'requested_predicates': {}
+    })
+
+    logger.info("\"Bank\" -> Send \"Loan-Application-KYC\" Proof Request to Satoshi")
+    satoshi['apply_loan_kyc_proof_request'] = bank['apply_loan_kyc_proof_request']
+
+    logger.info("\"Satoshi\" -> Get credentials for \"Loan-Application-KYC\" Proof Request")
+
+    search_for_apply_loan_kyc_proof_request = \
+        await anoncreds.prover_search_credentials_for_proof_req(satoshi['wallet'],
+                                                                satoshi['apply_loan_kyc_proof_request'], None)
+
+    cred_for_attr1 = await get_credential_for_referent(search_for_apply_loan_kyc_proof_request, 'attr1_referent')
+    cred_for_attr2 = await get_credential_for_referent(search_for_apply_loan_kyc_proof_request, 'attr2_referent')
+    cred_for_attr3 = await get_credential_for_referent(search_for_apply_loan_kyc_proof_request, 'attr3_referent')
+
+    await anoncreds.prover_close_credentials_search_for_proof_req(search_for_apply_loan_kyc_proof_request)
+
+    satoshi['creds_for_apply_loan_kyc_proof'] = {cred_for_attr1['referent']: cred_for_attr1,
+                                               cred_for_attr2['referent']: cred_for_attr2,
+                                               cred_for_attr3['referent']: cred_for_attr3}
+
+    satoshi['schemas_for_loan_kyc_app'], satoshi['cred_defs_for_loan_kyc_app'], satoshi['revoc_states_for_loan_kyc_app'] = \
+        await prover_get_entities_from_ledger(satoshi['pool'], satoshi['did'],
+                                              satoshi['creds_for_apply_loan_kyc_proof'], satoshi['name'], )
+
+    logger.info("\"Satoshi\" -> Create \"Loan-Application-KYC\" Proof")
+    revoc_states_for_loan_app = json.loads(satoshi['revoc_states_for_loan_kyc_app'])
+    timestamp_for_attr1 = get_timestamp_for_attribute(cred_for_attr1, revoc_states_for_loan_app)
+    timestamp_for_attr2 = get_timestamp_for_attribute(cred_for_attr2, revoc_states_for_loan_app)
+    timestamp_for_attr3 = get_timestamp_for_attribute(cred_for_attr3, revoc_states_for_loan_app)
+    satoshi['apply_loan_kyc_requested_creds'] = json.dumps({
+        'self_attested_attributes': {},
+        'requested_attributes': {
+            'attr1_referent': {'cred_id': cred_for_attr1['referent'], 'revealed': True,
+                               'timestamp': timestamp_for_attr1},
+            'attr2_referent': {'cred_id': cred_for_attr2['referent'], 'revealed': True,
+                               'timestamp': timestamp_for_attr2},
+            'attr3_referent': {'cred_id': cred_for_attr3['referent'], 'revealed': True,
+                               'timestamp': timestamp_for_attr3}
+        },
+        'requested_predicates': {}
+    })
+
+    satoshi['apply_loan_kyc_proof'] = \
+        await anoncreds.prover_create_proof(satoshi['wallet'], satoshi['apply_loan_kyc_proof_request'],
+                                            satoshi['apply_loan_kyc_requested_creds'], satoshi['master_secret_id'],
+                                            satoshi['schemas_for_loan_kyc_app'], satoshi['cred_defs_for_loan_kyc_app'],
+                                            satoshi['revoc_states_for_loan_kyc_app'])
+
+    logger.info("\"Satoshi\" -> Send \"Loan-Application-KYC\" Proof to Bank")
+    bank['apply_loan_kyc_proof'] = satoshi['apply_loan_kyc_proof']
+    apply_loan_kyc_proof_object = json.loads(bank['apply_loan_kyc_proof'])
+
+    logger.info("\"Bank\" -> Get Schemas, Credential Definitions and Revocation Registries from Ledger"
+                " required for Proof verifying")
+
+    bank['schemas_for_loan_kyc_app'], bank['cred_defs_for_loan_kyc_app'], bank['revoc_defs_for_loan_kyc_app'], \
+    bank['revoc_regs_for_loan_kyc_app'] = \
+        await verifier_get_entities_from_ledger(bank['pool'], bank['did'],
+                                                apply_loan_kyc_proof_object['identifiers'], bank['name'])
+
+    logger.info("\"Bank\" -> Verify \"Loan-Application-KYC\" Proof from Satoshi")
+    assert 'Satoshi' == \
+           apply_loan_kyc_proof_object['requested_proof']['revealed_attrs']['attr1_referent']['raw']
+    assert 'Garcia' == \
+           apply_loan_kyc_proof_object['requested_proof']['revealed_attrs']['attr2_referent']['raw']
+    assert '123-45-6789' == \
+           apply_loan_kyc_proof_object['requested_proof']['revealed_attrs']['attr3_referent']['raw']
+
+    assert await anoncreds.verifier_verify_proof(bank['apply_loan_kyc_proof_request'],
+                                                 bank['apply_loan_kyc_proof'],
+                                                 bank['schemas_for_loan_kyc_app'],
+                                                 bank['cred_defs_for_loan_kyc_app'],
+                                                 bank['revoc_defs_for_loan_kyc_app'],
+                                                 bank['revoc_regs_for_loan_kyc_app'])
 
     logger.info("==============================")
 
