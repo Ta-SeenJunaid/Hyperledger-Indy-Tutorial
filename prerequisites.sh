@@ -23,10 +23,10 @@ sudo bash -c \
 
 
 sudo apt-get update -y && sudo apt-get install -y \
-indy-node indy-plenum libindy indy-cli
+indy-node=1.13.0~dev1213 libindy-crypto=0.4.5 python3-indy-crypto=0.4.5 indy-plenum=1.13.0~dev1021 libindy=1.15.0~1536-xenial indy-cli=1.15.0~1536-xenial
 
 
-sudo pip3 install python3-indy
+sudo pip3 install python3-indy==1.15.0
 
 
 sudo awk \
