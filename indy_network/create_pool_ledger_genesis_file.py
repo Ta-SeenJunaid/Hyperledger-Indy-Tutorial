@@ -61,9 +61,7 @@ class PoolLedger:
         i =1 
         for arg in bls_str_arg.split(','):
             arg = str(arg)
-            arg = arg.strip()
-            if len(arg) != 174:
-                raise argparse.ArgumentTypeError("The lenght of this key {} should be 174 digit long".format(i))           
+            arg = arg.strip()           
             bls.append(arg)
             i += 1
 
