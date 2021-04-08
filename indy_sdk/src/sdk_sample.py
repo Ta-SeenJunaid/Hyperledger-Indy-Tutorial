@@ -309,6 +309,8 @@ async def run():
     college['transcript_cred_request'] = satoshi['transcript_cred_request']
 
     logger.info("\"College\" -> Create \"Transcript\" Credential for Satoshi")
+    #You can use encoded value of non-integer attribute is SHA256 converted to decimal. 
+    #note that encoding is not standardized by Indy except that 32-bit integers are encoded as themselves. IS-786
     college['satoshi_transcript_cred_values'] = json.dumps({
         "first_name": {"raw": "Satoshi", "encoded": "1139481716457488690172217916278103335"},
         "last_name": {"raw": "Garcia", "encoded": "5321642780241790123587902456789123452"},
