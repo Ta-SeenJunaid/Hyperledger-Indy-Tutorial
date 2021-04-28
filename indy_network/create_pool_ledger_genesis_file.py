@@ -46,9 +46,7 @@ class PoolLedger:
         i =1 
         for arg in verkeys_str_arg.split(','):
             arg = str(arg)
-            arg = arg.strip()
-            if len(arg) != 64:
-                raise argparse.ArgumentTypeError("The lenght verification key {} should be 64 digit long".format(i))           
+            arg = arg.strip()       
             verkeys.append(arg)
             i += 1
 
