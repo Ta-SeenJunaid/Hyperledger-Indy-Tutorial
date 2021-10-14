@@ -22,7 +22,7 @@ python3 create_domain_ledger_genesis_file.py \
 "L4vaBJDbZiaX68mVHLuZ2E" \
 --trusteeVerkeys \
 "~QKV8UWR7LHB7APvrWc88xK" \
---network sandbox
+--network ${NETWORK_NAME}
 
 
 python3 create_pool_ledger_genesis_file.py \
@@ -40,5 +40,7 @@ python3 create_pool_ledger_genesis_file.py \
 "9702, 9704, 9706" \
 --stewardDids \
 "RnXJMDxifkBaceAkPizz8F, AmJHyEZ9ofrPz1DUfx97Qo, PeVR5pdFizbK8WN9THd3mq" \
---nodeNum NODE_NUM \
---network NETWORK_NAME \
+--nodeNum ${NODE_NUM} \
+--network ${NETWORK_NAME} \
+
+python3 start_indy_node.py ${NODE_NAME}
