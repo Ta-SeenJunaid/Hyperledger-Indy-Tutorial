@@ -1,0 +1,26 @@
+version: '3'
+services:
+  #
+  # indy node
+  #
+  indy-node:
+    image: indy-node-base
+    command: 'bash -c ''./scripts/start_node.sh 1'''
+    networks:
+      - von
+    ports:
+      - "${INDY_NODE_PORT}:${INDY_NODE_PORT}"
+      - "${INDY_CLIENT_PORT}:${INDY_CLIENT_PORT}"
+    environment:
+      - IP=${IP}
+      - IPS=${IPS}
+      - DOCKERHOST=${DOCKERHOST}
+      - LOG_LEVEL=${LOG_LEVEL}
+      - RUST_LOG=${RUST_LOG}
+    volumes:
+      - node-data:/home/indy/ledger
+networks:
+  redwit:
+
+volumes:
+  node-data:

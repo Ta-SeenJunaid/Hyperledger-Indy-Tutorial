@@ -7,7 +7,7 @@
 `CLIENT_PORT=9702`
 
 ## Build
-`docker build (--no-cache) -t node1 .`
+`docker build (--no-cache) -t indy-node-base .`
 
 ## Run
 `docker-compose up -d`
