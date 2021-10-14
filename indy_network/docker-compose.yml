@@ -5,7 +5,7 @@ services:
   #
   indy-node:
     image: indy-node-base
-    command: 'bash -c ''./scripts/start_node.sh 1'''
+    command: 'bash -c ''./start_node.sh'''
     networks:
       - redwit
     ports:
@@ -14,6 +14,9 @@ services:
     environment:
       - IP=${IP}
       - IPS=${IPS}
+      - NODE_NUM=${NODE_NUM}
+      - NODE_SEED=${NODE_SEED}
+      - NODE_NAME=${NODE_NAME}
       - DOCKERHOST=${DOCKERHOST}
       - LOG_LEVEL=${LOG_LEVEL}
       - RUST_LOG=${RUST_LOG}
