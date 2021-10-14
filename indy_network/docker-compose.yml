@@ -17,6 +17,7 @@ services:
       - DOCKERHOST=${DOCKERHOST}
       - LOG_LEVEL=${LOG_LEVEL}
       - RUST_LOG=${RUST_LOG}
+      - NETWORK_NAME=${NETWORK_NAME}
     volumes:
       - node-data:/home/indy/ledger
 networks:
