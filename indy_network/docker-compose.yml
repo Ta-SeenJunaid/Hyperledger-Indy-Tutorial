@@ -7,7 +7,7 @@ services:
     image: indy-node-base
     command: 'bash -c ''./scripts/start_node.sh 1'''
     networks:
-      - von
+      - redwit
     ports:
       - "${INDY_NODE_PORT}:${INDY_NODE_PORT}"
       - "${INDY_CLIENT_PORT}:${INDY_CLIENT_PORT}"
